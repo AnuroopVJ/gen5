@@ -511,39 +511,45 @@ def file_decoder(filename: str):
     with open(filename, "rb") as f:
         header_bytes = f.read(HEADER_SIZE)
         header = header_parse(header_bytes)
-        
-        chunk_data_size = header['chunk_table_offset'] - HEADER_SIZE
-        chunk_data_bytes = f.read(chunk_data_size)
-        
-        metadata_chunk_bytes = f.read(header['chunk_table_size'])
-        metadata = metadata_parser(metadata_chunk_bytes)
-        
+        if not header_validate(header):
+            raise ValueError("Invalid or corrupted GEN5 header")
+        f.seek(header['chunk_table_offset'])
+        metadata_compressed = f.read(header['chunk_table_size'])
+        metadata = metadata_parser(metadata_compressed)
+
         chunk_records = metadata['gen5_metadata']['chunks']
         chunks = {}
         chunks['latent'] = []
         
         for record in chunk_records:
             chunk_type = record['type']
-            compressed_size = record['compressed_size']
-            offset = record['offset'] - HEADER_SIZE
-            chunk_bytes = chunk_data_bytes[offset:offset + compressed_size]
+            
+            # seek to the exact position
+            f.seek(record['offset'])
+            compressed_chunk = f.read(record['compressed_size'])
+            if len(compressed_chunk) != record['compressed_size']:
+                raise IOError(f"Truncated chunk {chunk_type} at offset {record['offset']}")
             
             if chunk_type == "LATN":
                 shape = tuple(record['extra']['shape'])
-                latent_array = latent_parser(chunk_bytes, shape)
+                latent_array = latent_parser(compressed_chunk, shape)
                 chunks['latent'].append(latent_array)
                 
             elif chunk_type == "DATA":
-                chunks['image'] = image_data_chunk_parser(chunk_bytes)['image_data']
-            
+                parsed = image_data_chunk_parser(compressed_chunk)
+                chunks['image'] = parsed['image_data']
+                
             else:
-                raise ValueError(f"Unknown chunk type: {chunk_type}. Supported types: LATN, DATA")
+                #unknown chunks are skipped but still accessible if required
+                raise ValueError(f"Unknown chunk type: {chunk_type}. "
+                                 f"Supported: LATN, DATA")
         
         return {
             "header": header,
             "chunks": chunks,
             "metadata": metadata
         }
+    
 
 def make_lazy_latent_loader(filename: str, chunk_record: dict):
     """Return a callable that loads the latent array on demand."""
@@ -568,3 +574,4 @@ def iter_lazy_latents(filename: str, chunk_records: list):
     for record in chunk_records:
         if record['type'] == "LATN":
             yield make_lazy_latent_loader(filename, record)
+
