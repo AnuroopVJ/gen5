@@ -11,126 +11,11 @@ import io
 
 
 
-class Gen5File():
+class Gen5FileHandler():
     #HEADER
     HEADER_FORMAT = '<4s B B H I I I I Q'  #uses little endian
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
-    @classmethod
-    def header_init(
-        cls,
-        version_major = 1,
-        version_minor = 0,
-        flags = 0,
-        chunk_table_offset = 0,
-        chunk_table_size = 0,
-        chunk_count = 0,
-        file_size = 0,
-        reserved = 0):
-        """Initialize GEN5 file header.
-        Returns the packed header bytes.
-        Args:
-            version_major (int): Major version number.
-            version_minor (int): Minor version number.
-            flags (int): Header flags.
-            chunk_table_offset (int): Offset to the chunk table.
-            chunk_table_size (int): Size of the chunk table.
-            chunk_count (int): Number of chunks.
-            file_size (int): Total file size.
-            reserved (int): Reserved for future use.
-        """
-        # header init
-        return struct.pack(
-            cls.HEADER_FORMAT,
-            b'GEN5',
-            version_major,
-            version_minor,
-            flags,
-            chunk_table_offset,
-            chunk_table_size,
-            chunk_count,
-            file_size,
-            reserved
-        )
-    @classmethod
-    def header_parse(cls, data: bytes):
-        """Parse GEN5 file header.
-        Args:
-            data (bytes): The header bytes to parse.
-            Returns:
-            dict: Parsed header fields.
-            
-        Returns:
-            dict: Parsed header fields.
-            """
-        unpacked = struct.unpack(cls.HEADER_FORMAT, data)
-        return {
-            'magic': unpacked[0],
-            'version_major': unpacked[1],
-            'version_minor': unpacked[2],
-            'flags': unpacked[3],
-            'chunk_table_offset': unpacked[4],
-            'chunk_table_size': unpacked[5],
-            'chunk_count': unpacked[6],
-            'file_size': unpacked[7],
-            'reserved': unpacked[8]
-        }
-
-    def header_validate(self, header: dict) -> bool:
-        """Validate GEN5 file header.
-        Args:
-            header (dict): Parsed header fields.
-            Returns:
-            bool: True if it is valid or False otherwise."""
-        if header['magic'] != b'GEN5':
-            return False
-        if header['version_major'] < 1:
-            return False
-        if header['chunk_count'] < 0:
-            return False
-        return True
-
-    def png_to_bytes(self, png_path: str) -> bytes:
-        """Convert PNG image to bytes, preserving transparency.
-        Args:
-            png_path (str): Path to the PNG image.
-        Returns:
-            bytes: PNG image data in bytes.
-
-        """
-        with Image.open(png_path) as img:
-            img = img.convert("RGBA") 
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return buf.getvalue()
-
-    def bytes_to_png(self, img_bytes: bytes) -> Image.Image:
-        """Convert bytes back to PNG image."""
-        buffer = io.BytesIO(img_bytes)
-        img = Image.open(buffer)
-        return img
-
-    def _chunk_packer_binary(self, chunk_type:bytes, chunk_flags: bytes, data:bytes) -> bytes:
-        """
-        Pack a binary chunk with header and compress it using Zstandard.
-        Args:
-            chunk_type (bytes): 4-byte chunk type identifier.
-            chunk_flags (bytes): 4-byte chunk flags.
-            data (bytes): Payload data.
-        Returns:
-            bytes: Compressed chunk data.
-        """
-        chunk_size = len(data)
-        #chunk maker
-        chunk_header = struct.pack('<4s 4s I', chunk_type, chunk_flags, chunk_size)
-        #compress chunk
-        chunk = chunk_header + data
-        compressed_chunk = ZstdCompressor().compress(chunk)
-        return compressed_chunk
-        
-    #METADATA
-    def metadata_validator(self, manifest) -> bytes:
-        """Validate and compress metadata manifest using JSON Schema and zstd."""
-        json_schema = """{
+    JSON_SCHEMA = """{
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "GEN5 Metadata Schema",
     "type": "object",
@@ -208,6 +93,122 @@ class Gen5File():
     "required": ["gen5_metadata"]
     }
     """
+    @classmethod
+    def header_init(
+        cls,
+        version_major = 1,
+        version_minor = 0,
+        flags = 0,
+        chunk_table_offset = 0,
+        chunk_table_size = 0,
+        chunk_count = 0,
+        file_size = 0,
+        reserved = 0):
+        """Initialize GEN5 file header.
+        Returns the packed header bytes.
+        Args:
+            version_major (int): Major version number.
+            version_minor (int): Minor version number.
+            flags (int): Header flags.
+            chunk_table_offset (int): Offset to the chunk table.
+            chunk_table_size (int): Size of the chunk table.
+            chunk_count (int): Number of chunks.
+            file_size (int): Total file size.
+            reserved (int): Reserved for future use.
+        """
+        # header init
+        return struct.pack(
+            cls.HEADER_FORMAT,
+            b'GEN5',
+            version_major,
+            version_minor,
+            flags,
+            chunk_table_offset,
+            chunk_table_size,
+            chunk_count,
+            file_size,
+            reserved
+        )
+    @classmethod
+    def header_parse(cls, data: bytes):
+        """Parse GEN5 file header.
+        Args:
+            data (bytes): The header bytes to parse.
+            Returns:
+            dict: Parsed header fields.
+            
+        Returns:
+            dict: Parsed header fields.
+            """
+        unpacked = struct.unpack(cls.HEADER_FORMAT, data)
+        return {
+            'magic': unpacked[0],
+            'version_major': unpacked[1],
+            'version_minor': unpacked[2],
+            'flags': unpacked[3],
+            'chunk_table_offset': unpacked[4],
+            'chunk_table_size': unpacked[5],
+            'chunk_count': unpacked[6],
+            'file_size': unpacked[7],
+            'reserved': unpacked[8]
+        }
+
+    def header_validate(self, header: dict) -> bool:
+        """Validate GEN5 file header.
+        Args:
+            header (dict): Parsed header fields.
+            Returns:
+            bool: True if it is valid or False otherwise."""
+        if header['magic'] != b'GEN5':
+            return False
+        if header['version_major'] < 1:
+            return False
+        if header['chunk_count'] < 0:
+            return False
+        return True
+    @staticmethod
+    def png_to_bytes(png_path: str) -> bytes:
+        """Convert PNG image to bytes, preserving transparency.
+        Args:
+            png_path (str): Path to the PNG image.
+        Returns:
+            bytes: PNG image data in bytes.
+
+        """
+        with Image.open(png_path) as img:
+            img = img.convert("RGBA") 
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+    @staticmethod
+    def bytes_to_png(img_bytes: bytes) -> Image.Image:
+        """Convert bytes back to PNG image."""
+        buffer = io.BytesIO(img_bytes)
+        img = Image.open(buffer)
+        return img
+
+    def _chunk_packer_binary(self, chunk_type:bytes, chunk_flags: bytes, data:bytes) -> bytes:
+        """
+        Pack a binary chunk with header and compress it using Zstandard.
+        Args:
+            chunk_type (bytes): 4-byte chunk type identifier.
+            chunk_flags (bytes): 4-byte chunk flags.
+            data (bytes): Payload data.
+        Returns:
+            bytes: Compressed chunk data.
+        """
+        chunk_size = len(data)
+        #chunk maker
+        chunk_header = struct.pack('<4s 4s I', chunk_type, chunk_flags, chunk_size)
+        #compress chunk
+        chunk = chunk_header + data
+        compressed_chunk = ZstdCompressor().compress(chunk)
+        return compressed_chunk
+        
+    #METADATA
+    def metadata_validator(self, manifest) -> bytes:
+        """Validate and compress metadata manifest using JSON Schema and zstd."""
+        json_schema = self.JSON_SCHEMA
         schema = json.loads(json_schema)
         jsonschema.validate(instance=manifest, schema=schema)
         json_bytes = json.dumps(manifest, indent=2).encode("utf-8")
@@ -305,8 +306,8 @@ class Gen5File():
         return manifest
 
     #IMAGE-DATA
-
-    def image_data_chunk_builder(self, image_binary):
+    @staticmethod
+    def image_data_chunk_builder(image_binary):
         """Build image data chunk from binary image data.
         Args:
             image_binary (bytes): Binary image data.
@@ -369,7 +370,7 @@ class Gen5File():
             uncompressed_size = len(data_bytes)
             if should_compress == True:
                 #compress the latent
-                compressed = _chunk_packer_binary(chunk_type, chunk_flags, data_bytes)
+                compressed = self._chunk_packer_binary(chunk_type, chunk_flags, data_bytes)
                 compressed_size = len(compressed)
             else:
                 compressed = data_bytes
@@ -622,4 +623,3 @@ class Gen5File():
         for record in chunk_records:
             if record['type'] == "LATN":
                 yield self.make_lazy_latent_loader(filename, record)
-
