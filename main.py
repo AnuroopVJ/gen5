@@ -177,7 +177,9 @@ def metadata_validator(manifest) -> bytes:
               "compressed_size":   { "type": "integer", "minimum": 0 },
               "uncompressed_size": { "type": "integer", "minimum": 0 },
               "hash":              { "type": "string" },
-              "extra":             { "type": "object" }
+              "extra":             { "type": "object" },
+
+              "compressed":        { "type": "boolean" }
             },
 
             "required": [
@@ -188,7 +190,8 @@ def metadata_validator(manifest) -> bytes:
               "compressed_size",
               "uncompressed_size",
               "hash",
-              "extra"
+              "extra",
+              "compressed"
             ]
           }
         }
@@ -275,8 +278,10 @@ def build_manifest(
             "compressed_size": rec["compressed_size"],
             "uncompressed_size": rec["uncompressed_size"],
             "hash": rec["hash"],
-            "extra": rec.get("extra", {})
+            "extra": rec.get("extra", {}),
+            "compressed": rec.get("compressed", True)
         })
+
     
     return manifest
     
@@ -330,7 +335,6 @@ def image_data_chunk_parser(compressed_chunk):
     }
 
 #LATENT CHUNK
-
 def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_records=None, should_compress: bool = True, convert_float16: bool = True) -> list:
     """Pack latent arrays into compressed chunk.
     Args:
@@ -346,13 +350,10 @@ def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_rec
         if latent_array.dtype not in (np.float16, np.float32):
             raise ValueError("Latent must be float16 or float32")
         
-        if convert_float16 == True:
-            # Convert to float16 if necessary
+        if convert_float16:
             if latent_array.dtype != np.float16:
                 latent_array = latent_array.astype(np.float16)
-                chunk_flags = b'F16'
-            elif latent_array.dtype == np.float16:
-                chunk_flags = b'F16'
+            chunk_flags = b"F16"
         else:
             if latent_array.dtype == np.float32:
                 chunk_flags = b'F32'
@@ -372,9 +373,10 @@ def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_rec
         #create manifest
         chunk_records.append({
             "type": "LATN",
-            "flags": "F16" if latent_array.dtype == np.float16 else "F32",
+            "flags": chunk_flags.decode('ascii'),
             "offset": file_offset,
             "compressed_size": compressed_size,
+            "compressed": should_compress,
             "uncompressed_size": uncompressed_size,
             "hash": hashlib.sha256(data_bytes).hexdigest(),
             "extra": {
@@ -384,11 +386,10 @@ def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_rec
         })
         file_offset += compressed_size
         latents.append(compressed)
-    
         
     return latents
 
-def latent_parser(compressed_chunk: bytes, shape: tuple):
+def latent_parser(compressed_chunk: bytes, shape: tuple, compressed: bool = True):
     """Parse a given single latent chunk and return the latent array.
     
     Args:
@@ -398,24 +399,45 @@ def latent_parser(compressed_chunk: bytes, shape: tuple):
     Returns:
         np.ndarray: Parsed latent array.
     """
-    decompressor = ZstdDecompressor()
-    decompressed = decompressor.decompress(compressed_chunk)
+    if compressed == True:
+        decompressor = ZstdDecompressor()
+        decompressed = decompressor.decompress(compressed_chunk)
 
-    if len(decompressed) < 12:
-        raise ValueError("Truncated latent chunk header")
+        if len(decompressed) < 12:
+            raise ValueError("Truncated latent chunk header")
 
-    chunk_type, chunk_flags, chunk_size = struct.unpack('<4s 4s I', decompressed[:12])
-    data_bytes = decompressed[12:12 + chunk_size]
+        chunk_type, chunk_flags, chunk_size = struct.unpack('<4s 4s I', decompressed[:12])
+        data_bytes = decompressed[12:12 + chunk_size]
 
-    if len(data_bytes) != chunk_size:
-        raise ValueError("Truncated latent chunk payload")
+        if len(data_bytes) != chunk_size:
+            raise ValueError("Truncated latent chunk payload")
 
-    flag_str = chunk_flags.decode('utf-8', errors='ignore').strip()
-    dtype = np.float16 if flag_str == "F16" else np.float32
+        flag_str = chunk_flags.decode('utf-8', errors='ignore').strip()
+        dtype = np.float16 if flag_str == "F16" else np.float32
 
-    arr = np.frombuffer(data_bytes, dtype=dtype).copy()
-    arr = arr.reshape(shape)
-    return arr
+        arr = np.frombuffer(data_bytes, dtype=dtype).copy()
+        arr = arr.reshape(shape)
+        return arr
+    else:
+        if len(compressed_chunk) < 12:
+            raise ValueError("Truncated latent chunk header")
+
+        chunk_type, chunk_flags, chunk_size = struct.unpack(
+            "<4s 4s I", compressed_chunk[:12]
+        )
+
+        data_bytes = compressed_chunk[12:12 + chunk_size]
+
+        if len(data_bytes) != chunk_size:
+            raise ValueError("Truncated latent chunk payload")
+
+        flag_str = chunk_flags.decode("utf-8", errors="ignore").strip()
+        dtype = np.float16 if flag_str == "F16" else np.float32
+
+        arr = np.frombuffer(data_bytes, dtype=dtype).copy()
+        return arr.reshape(shape)
+
+
 
 
 #RUNNING
@@ -454,7 +476,8 @@ def file_encoder(filename: str, latent: Dict[str, np.ndarray], chunk_records: li
             "compressed_size": len(image_chunk),
             "uncompressed_size": len(img_binary),
             "hash": hashlib.sha256(img_binary).hexdigest(),
-            "extra": {}
+            "extra": {},
+            "compressed": True
         }
         chunk_records.append(image_chunk_record)
         current_offset += len(image_chunk)
@@ -483,6 +506,7 @@ def file_encoder(filename: str, latent: Dict[str, np.ndarray], chunk_records: li
     # recompress metadata with the updated file_size
     compressed_metadata = metadata_validator(manifest)
     metadata_size = len(compressed_metadata)
+    total_file_size = HEADER_SIZE + len(latent_chunk) + (len(image_chunk) if image_chunk else 0) + len(compressed_metadata)
 
     #final header
     header = header_init(
@@ -531,33 +555,43 @@ def file_decoder(filename: str):
         chunks = {}
         chunks['latent'] = []
         
+
         for record in chunk_records:
             chunk_type = record['type']
+            compressed = record.get("compressed", True)
+
             f.seek(record['offset'])
-            compressed_chunk = f.read(record['compressed_size'])
-            if len(compressed_chunk) != record['compressed_size']:
+            raw_chunk = f.read(record['compressed_size'])
+
+            if len(raw_chunk) != record['compressed_size']:
                 raise IOError(f"Truncated chunk {chunk_type} at offset {record['offset']}")
-            
+
             if chunk_type == "LATN":
                 shape = tuple(record['extra']['shape'])
-                latent_array = latent_parser(compressed_chunk, shape)
+
+                if compressed:
+                    latent_array = latent_parser(raw_chunk, shape, True)
+                else:
+                    latent_array = latent_parser(raw_chunk, shape, False)
+
                 chunks['latent'].append(latent_array)
-                
             elif chunk_type == "DATA":
-                parsed = image_data_chunk_parser(compressed_chunk)
-                chunks['image'] = parsed['image_data']
-                
+                if compressed:
+                    parsed = image_data_chunk_parser(raw_chunk)
+                    chunks['image'] = parsed['image_data']
+                else:
+                    # DATA chunks have the same header layout even when not compressed
+                    chunk_type_b, flags_b, size = struct.unpack('<4s 4s I', raw_chunk[:12])
+                    chunks['image'] = raw_chunk[12:12+size]
             else:
-                #unknown chunks are skipped but still accessible if required
-                raise ValueError(f"Unknown chunk type: {chunk_type}. "
-                                 f"Supported: LATN, DATA")
+                raise ValueError(f"Unknown chunk type: {chunk_type}. Supported: LATN, DATA")
+
         
         return {
             "header": header,
             "chunks": chunks,
             "metadata": metadata
         }
-    
 
 def make_lazy_latent_loader(filename: str, chunk_record: dict):
     """Return a callable that loads the latent array on demand."""
@@ -572,9 +606,9 @@ def make_lazy_latent_loader(filename: str, chunk_record: dict):
                 f.seek(offset)
                 compressed_chunk = f.read(size)
                 shape = tuple(chunk_record['extra']['shape'])
-                loaded_array = latent_parser(compressed_chunk, shape)
+                compressed = chunk_record.get("compressed", True)
+                loaded_array = latent_parser(compressed_chunk, shape, compressed)
         return loaded_array
-
     return load
 
 def iter_lazy_latents(filename: str, chunk_records: list):
