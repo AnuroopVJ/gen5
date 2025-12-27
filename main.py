@@ -331,7 +331,7 @@ def image_data_chunk_parser(compressed_chunk):
 
 #LATENT CHUNK
 
-def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_records=None) -> list:
+def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_records=None, should_compress: bool = True, convert_float16: bool = True) -> list:
     """Pack latent arrays into compressed chunk.
     Args:
         latent (Dict[str, np.ndarray]): Dictionary of latent arrays.
@@ -345,22 +345,31 @@ def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_rec
     for latent_array in latent.values():
         if latent_array.dtype not in (np.float16, np.float32):
             raise ValueError("Latent must be float16 or float32")
-
-        # Convert to float16 if necessary
-        if latent_array.dtype != np.float16:
-            latent_array = latent_array.astype(np.float16)
-
+        
+        if convert_float16 == True:
+            # Convert to float16 if necessary
+            if latent_array.dtype != np.float16:
+                latent_array = latent_array.astype(np.float16)
+                chunk_flags = b'F16'
+            elif latent_array.dtype == np.float16:
+                chunk_flags = b'F16'
+        else:
+            if latent_array.dtype == np.float32:
+                chunk_flags = b'F32'
+            elif latent_array.dtype == np.float16:
+                chunk_flags = b'F16'
         chunk_type = b'LATN'
-        chunk_flags = b'F16'
         data_bytes = latent_array.tobytes()
         uncompressed_size = len(data_bytes)
+        if should_compress == True:
+            #compress the latent
+            compressed = chunk_packer_binary(chunk_type, chunk_flags, data_bytes)
+            compressed_size = len(compressed)
+        else:
+            compressed = data_bytes
+            compressed_size = uncompressed_size
 
-        # Compress the chunk
-        compressed = chunk_packer_binary(chunk_type, chunk_flags, data_bytes)
-        compressed_size = len(compressed)
-
-        # Create manifest record
-
+        #create manifest
         chunk_records.append({
             "type": "LATN",
             "flags": "F16" if latent_array.dtype == np.float16 else "F32",
@@ -375,11 +384,12 @@ def latent_packer(latent: Dict[str, np.ndarray], file_offset: int = 0, chunk_rec
         })
         file_offset += compressed_size
         latents.append(compressed)
+    
         
     return latents
 
 def latent_parser(compressed_chunk: bytes, shape: tuple):
-    """Parse a single latent chunk and return the latent array.
+    """Parse a given single latent chunk and return the latent array.
     
     Args:
         compressed_chunk (bytes): Compressed latent chunk.
@@ -523,8 +533,6 @@ def file_decoder(filename: str):
         
         for record in chunk_records:
             chunk_type = record['type']
-            
-            # seek to the exact position
             f.seek(record['offset'])
             compressed_chunk = f.read(record['compressed_size'])
             if len(compressed_chunk) != record['compressed_size']:
