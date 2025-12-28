@@ -46,8 +46,8 @@ def test_file_encode_decode():
 
         decoded_latent = decoded["chunks"]["latent"][0]
         
-        np.testing.assert_array_equal(decoded_latent.astype(np.float32), initial_noise_latent["latent_1"].astype(np.float32))
-
+        
+        np.testing.assert_array_equal(decoded_latent, initial_noise_latent["latent_1"])
 
         assert decoded["chunks"]["image"] == img_bytes
         metadata = decoded["metadata"]["gen5_metadata"]["model_info"]

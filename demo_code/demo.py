@@ -37,8 +37,7 @@ gen5.file_encoder(
     tags=["puppy","dog","smile"],
     img_binary=binary_img_data,
 )
-print("Image Encoded Succesfully...")
-
+print("Image Encoded Successfully...")
 decoded = gen5.file_decoder(
     r"C:\Users\neela\Desktop\Miscellaneous\image file format - .gen5\gen5\src\gen5\converted_img.gen5"
 )
@@ -53,7 +52,10 @@ if image_bytes is not None:
     img.save("decoded_image.png")
 
 for i, latent_array in enumerate(decoded["chunks"]["latent"]):
-    np.save(f"latent_{i}.npy", latent_array)
-
+    latent_data = decoded["chunks"].get("latent", [])
+    for i, latent_array in enumerate(latent_data):
+        np.save(f"latent_{i}.npy", latent_array)
+    
 print("Decoded metadata saved to decoded_metadata.json")
-print("Decoded image saved to decoded_image.png")
+if image_bytes is not None:
+    print("Decoded image saved to decoded_image.png")

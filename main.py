@@ -8,6 +8,28 @@ import numpy as np
 import jsonschema
 from datetime import datetime, UTC
 import io
+class Gen5DecodeError(Exception):
+    pass
+
+class Gen5CorruptHeader(Gen5DecodeError):
+    def __init__(self, message: str):
+        super().__init__(f"Corrupt header: {message}")
+
+class Gen5MetadataError(Gen5DecodeError):
+    def __init__(self, message: str):
+        super().__init__(f"Corrupt Metadata: {message}")
+
+class Gen5ChunkError(Gen5DecodeError):
+    def __init__(self, message: str):
+        super().__init__(f"Corrupt Chunk: {message}")
+
+class Gen5LatentError(Gen5ChunkError):
+    def __init__(self, message: str):
+        super().__init__(f"Corrupt Latent: {message}")
+
+class Gen5ImageError(Gen5ChunkError):
+    def __init__(self, message: str):
+        super().__init__(f"Corrupt Image: {message}")
 
 class Gen5FileHandler():
     #HEADER
@@ -91,6 +113,7 @@ class Gen5FileHandler():
     "required": ["gen5_metadata"]
     }
     """
+    
     @classmethod
     def header_init(
         cls,
@@ -208,14 +231,12 @@ class Gen5FileHandler():
         """Validate and compress metadata manifest using JSON Schema and zstd."""
         json_schema = self.JSON_SCHEMA
         schema = json.loads(json_schema)
-        # validation
         try:
             jsonschema.validate(instance=manifest, schema=schema)
             return True
-        except Exception as e:
+        except jsonschema.ValidationError:
             return False
-        
-        
+                
     def metadata_compressor(self, manifest):
         json_bytes = json.dumps(manifest, indent=2).encode("utf-8")
         chunk_type = b"META"
@@ -424,7 +445,7 @@ class Gen5FileHandler():
             if len(data_bytes) != chunk_size:
                 raise Gen5LatentError("Truncated latent chunk")
 
-            flag_str = chunk_flags.decode('utf-8', errors='ignore').replace('\x00', '').strip()
+            flag_str = chunk_flags.decode("utf-8", errors="ignore").replace('\x00', '').strip()
 
             if flag_str == "F16":
                 dtype = np.float16
@@ -655,30 +676,4 @@ class Gen5FileHandler():
         for record in chunk_records:
             if record['type'] == "LATN":
                 yield self.make_lazy_latent_loader(filename, record)
-
-#errors
-class Gen5DecodeError(Exception):
-    pass
-
-class Gen5CorruptHeader(Gen5DecodeError):
-    def __init__(self, message: str):
-        super().__init__(f"Corrupt header: {message}")
-
-class Gen5MetadataError(Gen5DecodeError):
-    def __init__(self, message: str):
-        super().__init__(f"Corrupt Metadata: {message}")
-
-class Gen5ChunkError(Gen5DecodeError):
-    def __init__(self, message: str):
-        super().__init__(f"Corrupt Chunk: {message}")
-
-class Gen5LatentError(Gen5ChunkError):
-    def __init__(self, message: str):
-        super().__init__(f"Corrupt Latent: {message}")
-
-class Gen5ImageError(Gen5ChunkError):
-    def __init__(self, message: str):
-        super().__init__(f"Corrupt Image: {message}")
-
-    
 
