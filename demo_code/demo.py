@@ -1,4 +1,4 @@
-from main import Gen5FileHandler
+from gen5.main import Gen5FileHandler
 import torch
 import json
 import numpy as np

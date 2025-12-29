@@ -1,5 +1,5 @@
 from pathlib import Path
-from ..main import Gen5FileHandler, Gen5ChunkError, Gen5MetadataError, Gen5ImageError, Gen5CorruptHeader
+from ..gen5.main import Gen5FileHandler, Gen5ChunkError, Gen5MetadataError, Gen5ImageError, Gen5CorruptHeader
 import numpy as np
 import tempfile
 import os
