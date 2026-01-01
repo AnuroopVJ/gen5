@@ -9,5 +9,3 @@ __pycache__
 dist
 #build dir
 build
-paper.md
-paper.bib

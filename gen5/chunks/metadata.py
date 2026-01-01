@@ -81,10 +81,11 @@ class Gen5Metadata:
                 prompt (str): Prompt used for generation.
                 tags (list): List of tags.
                 chunk_records (list): List of chunk record dictionaries.
+                generation_settings (Optional[dict]): Generation settings. Defaults to predefined structure if not provided.
+                hardware_info (Optional[dict]): Hardware information. Defaults to predefined structure if not provided.
             Returns:
                 dict: Manifest dictionary.
             """
-
             manifest = {
                 "gen5_metadata": {
                     "file_info": {
