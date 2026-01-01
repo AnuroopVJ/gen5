@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gen5"
+version = "0.1.0"
+description = "GEN5: A Binary Container Format For Improving Reproducibility In Workflows Concerning AI-Generated Images"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Anuroop V J", email = "anuroopvjneelambari@gmail.com" }
+]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["image-format", "encoder", "decoder", "gen5"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "click",
+  "jsonschema",
+  "numpy",
+  "pillow",
+  "pynvml",
+  "torch",
+  "typing-extensions",  # prefer over bare 'typing' (which is stdlib)
+  "zstandard",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-cov",
+  "ruff>=0.1.0",
+  "mypy>=1.0",
+  "types-Pillow",
+]
+
+[project.urls]
+Homepage = "https://pypi.org/project/gen5/"
+Repository = "https://github.com/AnuroopVJ/gen5"
+Documentation = "https://github.com/AnuroopVJ/gen5/tree/master/all_docs/docs"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gen5*"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-v --tb=short"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "TCH", "PTH"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+strict = false
+warn_unused_configs = true
+
+[tool.coverage.run]
+branch = true
+source = ["gen5"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

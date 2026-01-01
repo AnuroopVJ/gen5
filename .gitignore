@@ -1,4 +1,13 @@
-generated_files
+.vscode
 .qodo
-.venv
+.pytest_cache
+.devcontainer
 __pycache__
+#egg
+*.egg-info
+#dist dir
+dist
+#build dir
+build
+paper.md
+paper.bib
