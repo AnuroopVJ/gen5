@@ -6,7 +6,8 @@
 
 ## Features
 - Noise latent tensor storage
-- Rich AI-native metadata that includes
+- Rich AI-native metadata that includes:
+   
       - Model name and version
       - Prompt  
       - Tags  
